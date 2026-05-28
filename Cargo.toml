@@ -1,0 +1,9 @@
+[package]
+name = "kyber-ntt-hardened"
+version = "1.0.0"
+authors = ["Aayan <aayanshikalgar29@gmail.com>"]
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "FIPS 203 Compliant High-Performance Hardened Kyber NTT Framework with AVX2 optimizations."
+
+[dependencies]
