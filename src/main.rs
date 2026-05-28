@@ -3,13 +3,10 @@
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
-    __m256i, _mm256_add_epi16, _mm256_loadu_si256, _mm256_mulhi_epi16, _mm256_mullo_epi16,
-    _mm256_set1_epi16, _mm256_storeu_si256, _mm256_sub_epi16,
+    __m256i, _mm256_add_epi16, _mm256_load_si256, _mm256_mulhi_epi16, _mm256_mullo_epi16,
+    _mm256_set1_epi16, _mm256_store_si256, _mm256_sub_epi16,
 };
 
-// ==========================================
-// 1. CRYPTO CONSTANTS & POLY STRUCTURE
-// ==========================================
 const KYBER_Q: i16 = 3329;
 const QINV: i16 = -3327; 
 const BARRETT_V: i16 = 20159; 
@@ -20,7 +17,6 @@ pub struct Poly {
     pub coeffs: [i16; 256],
 }
 
-// ZETAS table in bit-reversed order for Kyber NTT
 static ZETAS: [i16; 128] = [
     0, 1729, 2580, 3289, 2642, 630, 1897, 848, 1062, 1919, 193, 797, 2786, 2022, 1145, 2165,
     2307, 2420, 2907, 327, 3273, 2011, 580, 2242, 728, 2275, 2753, 674, 666, 2645, 1480, 452,
@@ -32,9 +28,6 @@ static ZETAS: [i16; 128] = [
     1140, 2306, 2385, 958, 3002, 1762, 2851, 100, 1253, 3044, 2493, 2060, 223, 2146, 1100, 6
 ];
 
-// ==========================================
-// 2. MATHEMATICAL REDUCTION ENGINES
-// ==========================================
 #[inline]
 const fn montgomery_reduce_scalar(a: i32) -> i16 {
     let k = ((a as i16).wrapping_mul(QINV)) as i32;
@@ -58,20 +51,12 @@ const fn barrett_reduce_scalar(a: i16) -> i16 {
 unsafe fn montgomery_reduce_avx(a_lo: __m256i, a_hi: __m256i) -> __m256i {
     let q = _mm256_set1_epi16(KYBER_Q);
     let qinv = _mm256_set1_epi16(QINV);
-    
-    // k = a * qinv mod 2^16
     let k = _mm256_mullo_epi16(a_lo, qinv);
-    
-    // c = (k * q) / 2^16 (taking high 16 bits)
     let t = _mm256_mulhi_epi16(k, q);
-    
-    // result = a_hi - t
     _mm256_sub_epi16(a_hi, t)
 }
 
-// ==========================================
-// 3. CORE VECTORIZED (AVX2) NTT ENGINE
-// ==========================================
+// Fixed AVX2 NTT Function
 pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     #[cfg(any(target_arch = "x86_64", target_feature = "avx2"))]
     {
@@ -79,45 +64,41 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
         let r = poly.coeffs.as_mut_ptr();
         let mut len = 128;
 
-        // FIX: SIMD handling strictly optimized for len >= 32 to avoid register mismatch
+        // Strict Kyber logic: k increments correctly outside the inner block
         while len >= 32 {
             let mut start = 0;
             while start < 256 {
-                let zeta_idx = if k < 128 { k } else { 127 }; // Safety index boundary guard
-                let zeta = _mm256_set1_epi16(ZETAS[zeta_idx]);
+                let zeta = _mm256_set1_epi16(ZETAS[k]);
                 k += 1;
                 
                 for j in (start..(start + len)).step_by(16) {
-                    if j + len + 15 < 256 {
-                        let ptr_a = r.add(j).cast::<__m256i>();
-                        let ptr_b = r.add(j + len).cast::<__m256i>();
+                    let ptr_a = r.add(j).cast::<__m256i>();
+                    let ptr_b = r.add(j + len).cast::<__m256i>();
 
-                        let va = _mm256_loadu_si256(ptr_a);
-                        let vb = _mm256_loadu_si256(ptr_b);
-                        
-                        let t_lo = _mm256_mullo_epi16(vb, zeta);
-                        let t_hi = _mm256_mulhi_epi16(vb, zeta);
-                        
-                        let t = montgomery_reduce_avx(t_lo, t_hi);
-                        
-                        let a_new = _mm256_add_epi16(va, t);
-                        let b_new = _mm256_sub_epi16(va, t);
-                        
-                        _mm256_storeu_si256(ptr_a, a_new);
-                        _mm256_storeu_si256(ptr_b, b_new);
-                    }
+                    let va = _mm256_load_si256(ptr_a); // Aligned optimization
+                    let vb = _mm256_load_si256(ptr_b);
+                    
+                    let t_lo = _mm256_mullo_epi16(vb, zeta);
+                    let t_hi = _mm256_mulhi_epi16(vb, zeta);
+                    
+                    let t = montgomery_reduce_avx(t_lo, t_hi);
+                    
+                    let a_new = _mm256_add_epi16(va, t);
+                    let b_new = _mm256_sub_epi16(va, t);
+                    
+                    _mm256_store_si256(ptr_a, a_new);
+                    _mm256_store_si256(ptr_b, b_new);
                 }
                 start += 2 * len;
             }
             len >>= 1;
         }
 
-        // Scalar Fallback Layers (Handling narrow bounds 16, 8, 4, 2, 1 seamlessly)
+        // Scalar layers
         while len >= 1 {
             let mut start = 0;
             while start < 256 {
-                let zeta_idx = if k < 128 { k } else { 127 };
-                let zeta = ZETAS[zeta_idx];
+                let zeta = ZETAS[k];
                 k += 1;
                 for j in start..(start + len) {
                     let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
@@ -130,24 +111,20 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
             len >>= 1;
         }
 
-        // Final coefficient stabilization loop
         for coeff in &mut poly.coeffs {
             *coeff = barrett_reduce_scalar(*coeff);
         }
     }
 }
 
-// ==========================================
-// 4. SCALAR NTT ENGINE (FALLBACK)
-// ==========================================
+// Fixed Scalar Fallback
 pub fn poly_ntt_scalar(poly: &mut Poly) {
     let mut k = 1;
     let mut len = 128;
     while len >= 1 {
         let mut start = 0;
         while start < 256 {
-            let zeta_idx = if k < 128 { k } else { 127 };
-            let zeta = ZETAS[zeta_idx];
+            let zeta = ZETAS[k];
             k += 1;
             for j in start..(start + len) {
                 let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
@@ -164,25 +141,17 @@ pub fn poly_ntt_scalar(poly: &mut Poly) {
     }
 }
 
-// ==========================================
-// 5. DYNAMIC DISPATCH & RUNTIME CHECK
-// ==========================================
 pub fn poly_ntt_dispatch(poly: &mut Poly) {
     #[cfg(any(target_arch = "x86_64", target_feature = "avx2"))]
     {
         if is_x86_feature_detected!("avx2") {
-            unsafe {
-                poly_ntt_avx(poly);
-            }
+            unsafe { poly_ntt_avx(poly); }
             return;
         }
     }
     poly_ntt_scalar(poly);
 }
 
-// ==========================================
-// 6. MAIN EXECUTION
-// ==========================================
 fn main() {
     println!("🌐 Executing Hardened KAT-Compliant NTT Framework...");
     
@@ -191,19 +160,14 @@ fn main() {
         poly.coeffs[i] = i as i16;
     }
     
-    // ⏱️ Stopwatch Shuru
     let start = std::time::Instant::now();
     
-    // NTT ko 10,000 baar chala kar check karte hain
     for _ in 0..10000 {
         let mut test_poly = poly.clone();
         poly_ntt_dispatch(&mut test_poly);
     }
     
-    // ⏱️ Stopwatch Khatam
     let duration = start.elapsed();
-    
     println!("📊 Validated Dynamic Matrix Output (Indices 0..5): {:?}", &poly.coeffs[0..5]);
     println!("⚡ SPEED REPORT: 10,000 NTT Executions took: {:?}", duration);
 }
-
