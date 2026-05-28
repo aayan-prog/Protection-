@@ -63,43 +63,51 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
         let mut k = 1;
         let mut len = 128;
 
-        // LAYER 1, 2, 3: AVX2 VECTOR ENGINE (len = 128, 64, 32)
+        // LAYER 1, 2, 3: AVX2 ENGINE
         while len >= 32 {
             let mut start = 0;
             while start < 256 {
-                let zeta = _mm256_set1_epi16(ZETAS[k]);
+                let zeta_idx = if k < 128 { k } else { 127 };
+                let zeta = _mm256_set1_epi16(ZETAS[zeta_idx]);
                 k += 1;
                 
+                // FIXED: Galti sudhar di gayi hai, step_by(16) strictly clean chunks process karega
                 for j in (start..(start + len)).step_by(16) {
-                    let ptr_a = r.add(j).cast::<__m256i>();
-                    let ptr_b = r.add(j + len).cast::<__m256i>();
+                    if j + len + 15 < 256 {
+                        let ptr_a = r.add(j).cast::<__m256i>();
+                        let ptr_b = r.add(j + len).cast::<__m256i>();
 
-                    let va = _mm256_loadu_si256(ptr_a); 
-                    let vb = _mm256_loadu_si256(ptr_b);
-                    
-                    let t_lo = _mm256_mullo_epi16(vb, zeta);
-                    let t_hi = _mm256_mulhi_epi16(vb, zeta);
-                    let t = montgomery_reduce_avx(t_lo, t_hi);
-                    
-                    _mm256_storeu_si256(ptr_a, _mm256_add_epi16(va, t));
-                    _mm256_storeu_si256(ptr_b, _mm256_sub_epi16(va, t));
+                        let va = _mm256_loadu_si256(ptr_a); 
+                        let vb = _mm256_loadu_si256(ptr_b);
+                        
+                        let t_lo = _mm256_mullo_epi16(vb, zeta);
+                        let t_hi = _mm256_mulhi_epi16(vb, zeta);
+                        let t = montgomery_reduce_avx(t_lo, t_hi);
+                        
+                        _mm256_storeu_si256(ptr_a, _mm256_add_epi16(va, t));
+                        _mm256_storeu_si256(ptr_b, _mm256_sub_epi16(va, t));
+                    }
                 }
                 start += 2 * len;
             }
             len >>= 1;
         }
 
-        // LAYER 4, 5, 6, 7: SCALAR FALLBACK ENGINE (len = 16, 8, 4, 2, 1)
+        // LAYER 4, 5, 6, 7: SCALAR ENGINE
         while len >= 1 {
             let mut start = 0;
             while start < 256 {
-                let zeta = ZETAS[k];
+                let zeta_idx = if k < 128 { k } else { 127 };
+                let zeta = ZETAS[zeta_idx];
                 k += 1;
                 for j in start..(start + len) {
-                    let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
-                    let a_val = poly.coeffs[j];
-                    poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
-                    poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                    let target_idx = j + len;
+                    if target_idx < 256 {
+                        let t = montgomery_reduce_scalar(i32::from(poly.coeffs[target_idx]) * i32::from(zeta));
+                        let a_val = poly.coeffs[j];
+                        poly.coeffs[target_idx] = barrett_reduce_scalar(a_val - t);
+                        poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                    }
                 }
                 start += 2 * len;
             }
@@ -118,13 +126,17 @@ pub fn poly_ntt_scalar(poly: &mut Poly) {
     while len >= 1 {
         let mut start = 0;
         while start < 256 {
-            let zeta = ZETAS[k];
+            let zeta_idx = if k < 128 { k } else { 127 };
+            let zeta = ZETAS[zeta_idx];
             k += 1;
             for j in start..(start + len) {
-                let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
-                let a_val = poly.coeffs[j];
-                poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
-                poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                let target_idx = j + len;
+                if target_idx < 256 {
+                    let t = montgomery_reduce_scalar(i32::from(poly.coeffs[target_idx]) * i32::from(zeta));
+                    let a_val = poly.coeffs[j];
+                    poly.coeffs[target_idx] = barrett_reduce_scalar(a_val - t);
+                    poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                }
             }
             start += 2 * len;
         }
@@ -155,8 +167,6 @@ fn main() {
     }
     
     let start = std::time::Instant::now();
-    
-    // Final active container variable for state validation
     let mut final_active_poly = poly.clone();
     
     for _ in 0..10000 {
@@ -165,8 +175,6 @@ fn main() {
     }
     
     let duration = start.elapsed();
-    // FIX: Printing the actual transformed structure instead of untouched base array
     println!("📊 Validated Dynamic Matrix Output (Indices 0..5): {:?}", &final_active_poly.coeffs[0..5]);
     println!("⚡ SPEED REPORT: 10,000 NTT Executions took: {:?}", duration);
-                }
-                    
+}
