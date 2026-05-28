@@ -7,4 +7,3 @@ license = "GPL-3.0-only"
 description = "FIPS 203 Compliant High-Performance Hardened Kyber NTT Framework with AVX2 optimizations."
 
 [dependencies]
-# Ekdum simple aur clean, koi extra dependency nahi
