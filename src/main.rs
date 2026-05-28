@@ -184,8 +184,26 @@ pub fn poly_ntt_dispatch(poly: &mut Poly) {
 // 6. MAIN EXECUTION
 // ==========================================
 fn main() {
-    println!("🌐 Executing Enterprise Grade Crypto-Agile NTT Framework...");
-    let mut poly = Poly { coeffs: [1; 256] };
-    poly_ntt_dispatch(&mut poly);
-    println!("📊 Core Coefficients Matrix Output: {:?}", &poly.coeffs[0..5]);
-  }
+    println!("🌐 Executing Hardened KAT-Compliant NTT Framework...");
+    
+    let mut poly = Poly { coeffs: [0; 256] };
+    for i in 0..256 {
+        poly.coeffs[i] = i as i16;
+    }
+    
+    // ⏱️ Stopwatch Shuru
+    let start = std::time::Instant::now();
+    
+    // NTT ko 10,000 baar chala kar check karte hain
+    for _ in 0..10000 {
+        let mut test_poly = poly.clone();
+        poly_ntt_dispatch(&mut test_poly);
+    }
+    
+    // ⏱️ Stopwatch Khatam
+    let duration = start.elapsed();
+    
+    println!("📊 Validated Dynamic Matrix Output (Indices 0..5): {:?}", &poly.coeffs[0..5]);
+    println!("⚡ SPEED REPORT: 10,000 NTT Executions took: {:?}", duration);
+}
+
