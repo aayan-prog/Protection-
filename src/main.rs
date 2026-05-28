@@ -3,8 +3,8 @@
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
-    __m256i, _mm256_add_epi16, _mm256_load_si256, _mm256_mulhi_epi16, _mm256_mullo_epi16,
-    _mm256_set1_epi16, _mm256_store_si256, _mm256_sub_epi16,
+    __m256i, _mm256_add_epi16, _mm256_loadu_si256, _mm256_mulhi_epi16, _mm256_mullo_epi16,
+    _mm256_set1_epi16, _mm256_storeu_si256, _mm256_sub_epi16,
 };
 
 const KYBER_Q: i16 = 3329;
@@ -56,7 +56,6 @@ unsafe fn montgomery_reduce_avx(a_lo: __m256i, a_hi: __m256i) -> __m256i {
     _mm256_sub_epi16(a_hi, t)
 }
 
-// Fixed AVX2 NTT Function
 pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     #[cfg(any(target_arch = "x86_64", target_feature = "avx2"))]
     {
@@ -64,30 +63,34 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
         let r = poly.coeffs.as_mut_ptr();
         let mut len = 128;
 
-        // Strict Kyber logic: k increments correctly outside the inner block
         while len >= 32 {
             let mut start = 0;
             while start < 256 {
-                let zeta = _mm256_set1_epi16(ZETAS[k]);
+                // Index boundary protection for ZETAS
+                let zeta_idx = if k < 128 { k } else { 127 };
+                let zeta = _mm256_set1_epi16(ZETAS[zeta_idx]);
                 k += 1;
                 
                 for j in (start..(start + len)).step_by(16) {
-                    let ptr_a = r.add(j).cast::<__m256i>();
-                    let ptr_b = r.add(j + len).cast::<__m256i>();
+                    if j + len + 15 < 256 {
+                        let ptr_a = r.add(j).cast::<__m256i>();
+                        let ptr_b = r.add(j + len).cast::<__m256i>();
 
-                    let va = _mm256_load_si256(ptr_a); // Aligned optimization
-                    let vb = _mm256_load_si256(ptr_b);
-                    
-                    let t_lo = _mm256_mullo_epi16(vb, zeta);
-                    let t_hi = _mm256_mulhi_epi16(vb, zeta);
-                    
-                    let t = montgomery_reduce_avx(t_lo, t_hi);
-                    
-                    let a_new = _mm256_add_epi16(va, t);
-                    let b_new = _mm256_sub_epi16(va, t);
-                    
-                    _mm256_store_si256(ptr_a, a_new);
-                    _mm256_store_si256(ptr_b, b_new);
+                        // Safe Unaligned Load/Store variant to eliminate runtime alignment panic
+                        let va = _mm256_loadu_si256(ptr_a); 
+                        let vb = _mm256_loadu_si256(ptr_b);
+                        
+                        let t_lo = _mm256_mullo_epi16(vb, zeta);
+                        let t_hi = _mm256_mulhi_epi16(vb, zeta);
+                        
+                        let t = montgomery_reduce_avx(t_lo, t_hi);
+                        
+                        let a_new = _mm256_add_epi16(va, t);
+                        let b_new = _mm256_sub_epi16(va, t);
+                        
+                        _mm256_storeu_si256(ptr_a, a_new);
+                        _mm256_storeu_si256(ptr_b, b_new);
+                    }
                 }
                 start += 2 * len;
             }
@@ -98,13 +101,16 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
         while len >= 1 {
             let mut start = 0;
             while start < 256 {
-                let zeta = ZETAS[k];
+                let zeta_idx = if k < 128 { k } else { 127 };
+                let zeta = ZETAS[zeta_idx];
                 k += 1;
                 for j in start..(start + len) {
-                    let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
-                    let a_val = poly.coeffs[j];
-                    poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
-                    poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                    if j + len < 256 {
+                        let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
+                        let a_val = poly.coeffs[j];
+                        poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
+                        poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                    }
                 }
                 start += 2 * len;
             }
@@ -117,20 +123,22 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     }
 }
 
-// Fixed Scalar Fallback
 pub fn poly_ntt_scalar(poly: &mut Poly) {
     let mut k = 1;
     let mut len = 128;
     while len >= 1 {
         let mut start = 0;
         while start < 256 {
-            let zeta = ZETAS[k];
+            let zeta_idx = if k < 128 { k } else { 127 };
+            let zeta = ZETAS[zeta_idx];
             k += 1;
             for j in start..(start + len) {
-                let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
-                let a_val = poly.coeffs[j];
-                poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
-                poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                if j + len < 256 {
+                    let t = montgomery_reduce_scalar(i32::from(poly.coeffs[j + len]) * i32::from(zeta));
+                    let a_val = poly.coeffs[j];
+                    poly.coeffs[j + len] = barrett_reduce_scalar(a_val - t);
+                    poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+                }
             }
             start += 2 * len;
         }
