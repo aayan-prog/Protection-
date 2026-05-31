@@ -3,10 +3,22 @@ name = "kyber_ntt_avx2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Aayan"]
-description = "Super-fast 13.28ms Kyber Forward NTT core pipeline optimized with AVX2 and branchless Barrett reductions."
+description = "Super-fast AVX2 optimized Kyber Forward NTT (6.89ms) and Hybrid Inverse NTT (9.48ms) pipelines with branchless reductions."
+
+# ---- BINARY REGISTRATION ----
+# 1. Forward NTT Binary
+[[bin]]
+name = "ntt"
+path = "src/bin/ntt.rs"
+
+# 2. Inverse NTT Binary
+[[bin]]
+name = "invntt"
+path = "src/bin/invntt.rs"
 
 [dependencies]
 
+# ---- HIGH PERFORMANCE RELEASE PROFILE ----
 [profile.release]
 opt-level = 3
 lto = true
