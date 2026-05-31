@@ -3,7 +3,7 @@ name = "kyber_ntt_avx2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Aayan"]
-description = "Super-fast AVX2 optimized Kyber Forward NTT (6.89ms) and Hybrid Inverse NTT (9.48ms) pipelines inside a single core engine."
+description = "Super-fast AVX2 optimized Kyber Forward NTT and Hybrid Inverse NTT pipelines."
 
 [dependencies]
 
