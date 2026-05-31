@@ -1,4 +1,4 @@
-name: Rust
+ name: Rust Unified Engine CI
 
 on:
   push:
@@ -8,36 +8,20 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-
-jobs:
-  build:
-
-    name: Rust Single Main CI
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
-  # Compiler ko bolna ki AVX2 code compile kare
   RUSTFLAGS: "-C target-feature=+avx2"
 
 jobs:
-  build_only:
+  build_check:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust Toolchain
+    - name: Install Rust Stable Toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Rust Cache Setup
+    - name: Rust Cache Automation
       uses: swatinem/rust-cache@v2
 
-    # --- CRITICAL FIX: SIRF BUILD CHECK KARNA HAI ---
-    - name: Verify AVX2 Compilation (Release Mode)
+    - name: Verify Strict AVX2 Production Build
       run: cargo build --release
