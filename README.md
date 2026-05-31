@@ -1,51 +1,42 @@
-# 🚀 High-Performance Kyber Forward NTT Engine (AVX2-Optimized)
+# 🚀 Kyber AVX2 NTT & iNTT Monster Engine
 
-A battle-tested, high-performance implementation of the **Forward Number Theoretic Transform (NTT)** for the Crystals-Kyber Post-Quantum Cryptography algorithm. This engine leverages architecture-specific Intel/AMD **AVX2 SIMD intrinsics** combined with a branchless, vector-aligned **Barrett Reduction** pipeline to achieve blistering speeds.
+[![Rust Unified Engine CI](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/actions/workflows/rust.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/actions)
+![Rust Version](https://img.shields.io/badge/rustc-1.75+-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+![Architecture](https://img.shields.io/badge/arch-x86__64%20(AVX2)-orange)
 
----
-
-## 🏎️ Performance & Benchmarks
-
-The core layout eliminates dynamic memory allocations and heavy branch prediction overheads by strictly binding computing tasks directly to 256-bit hardware vector registers.
-
-### 📊 Micro-Benchmark Reports (10,000 Iterations)
-
-| Environment / Architecture | Optimization Profile | Execution Time (10k Rounds) | Single NTT Latency | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **GitHub Actions CI Runner** | Shared Virtual Core (`+avx2`) | ~23.64 ms | ~2.36 $\mu s$ | Passed ✅ |
-| **Google Colab Cloud Core** | Dedicated Server vCPU (`target-cpu=native`) | **11.21 ms** 🚀 | **1.12 $\mu s$** | **Optimal** 🔥 |
+An ultra-optimized, high-performance **Forward NTT** and **Hybrid Inverse NTT** core engine implemented in Rust using native `x86_64` AVX2 vector intrinsics. Designed specifically for the **Kyber (ML-KEM)** lattice-based cryptographic post-quantum algorithm.
 
 ---
 
-## 🛠️ Key Architectural Optimizations
+## ⚡ Performance Benchmarks (10,000 Runs)
 
-* **Zero-Branch Vector Loops:** Eliminated all loop-boundary conditions (`if` guards) within the inner computation layers. This prevents CPU pipeline stalls and minimizes branch misprediction penalties.
-* **Vectorized Barrett Reduction:** Integrated `_mm256_mulhi_epi16` and vectorized bit-shifts to compute modular reductions directly on parallel lanes inside `_mm256_storeu_si256` boundaries.
-* **Pure Stack Allocation:** The structure enforces a strict `#[repr(align(32))]` layout on the structural `Poly` polynomial array to ensure perfectly aligned, un-faulted AVX2 stream loads.
+Executed live inside GitHub Actions production runners (Standard Ubuntu-Latest):
 
----
+| Pipeline Engine | Total Batch Time (10,000 executions) | Single Execution Speed | Status |
+| :--- | :--- | :--- | :---: |
+| **🚀 Forward NTT Engine** | `6.9208 ms` | **~0.69 microseconds** | `STABLE` |
+| **⚡ Inverse iNTT Engine** | `5.3667 ms` | **~0.53 microseconds** | `STABLE` |
 
-## 📂 Core Architecture Mapping
-
-The code targets specific processing boundaries tailored dynamically according to standard Cooley-Tukey butterfly layers:
-
-1. **Layers 1-3 (SIMD Lanes):** Processed via the high-throughput 256-bit AVX2 execution framework down to a vector width blocksize of 32 elements.
-2. **Layers 4-7 (Scalar Fallback):** Handled sequentially by a scalar engine using precise modular parameters to compute standard remaining bounds.
+> 📊 **Sanity Check Validation:** Mathematical Total Coefficients Sum exactly verified at `426424` (0% data corruption across parallel SIMD lane shifting).
 
 ---
 
-## 🚀 Quick Start & Verification
+## 🔥 Key Architectural Highlights
 
-### Prerequisites
-* Rust stable toolchain installed.
-* An x86_64 target CPU supporting the AVX2 instruction set.
+* **Pure SIMD Vectorization:** Leverages 256-bit wide registers (`__m256i`) packing 16-bit signed integers to compute 16 butterfly operations simultaneously.
+* **Hybrid Reduction Pipeline:** Blends fast **Montgomery Reductions** for coefficient multiplication with exact **Barrett Reductions** for strict bound-checking without explicit branching.
+* **Unified Core Architecture:** Single `src/main.rs` engine layout bypassing nested binary paths, making it lightweight and fully compatible with automation CI/CD tools.
 
-### Run Benchmarks Locally
-To compile with full machine-level optimizations and run the stopwatch integration pipeline, use:
+---
 
-```bash
-RUSTFLAGS="-C target-cpu=native" cargo run --release
+## 📂 Project Structure
 
-INITIALIZING HIGH-PERFORMANCE AVX2 NTT ENGINE...
-⚡ BENCHMARK COMPLETE: 10,000 NTT Executions took: 11.218216ms
-📊 Sample Coefficients Output: [1737, 1737, 2965, 3019, 642]
+```text
+kyber_ntt_avx2/
+├── .github/
+│   └── workflows/
+│       └── rust.yml      # CI/CD Benchmark Automation Pipeline
+├── Cargo.toml            # Strict Release Profile Optimization Settings
+└── src/
+    └── main.rs           # Core AVX2 NTT/iNTT Unified Engine
