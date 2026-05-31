@@ -12,8 +12,42 @@ env:
 jobs:
   build:
 
-    - name: Build NTT Binary
-  run: RUSTFLAGS="-C target-feature=+avx2" cargo build --release --bin ntt
+    name: Rust AVX2 NTT CI
 
-- name: Build Inverse NTT Binary
-  run: RUSTFLAGS="-C target-feature=+avx2" cargo build --release --bin invntt
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  # GitHub ke CPU ko explicitly bolna ki AVX2 instructions allow kare
+  RUSTFLAGS: "-C target-feature=+avx2"
+
+jobs:
+  build_and_run:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust Cache Setup
+      uses: swatinem/rust-cache@v2
+
+    # --- FORWARD NTT EXECUTION ---
+    - name: Build Forward NTT
+      run: cargo build --release --bin ntt
+
+    - name: Run Forward NTT Benchmark
+      run: cargo run --release --bin ntt
+
+    # --- INVERSE NTT EXECUTION ---
+    - name: Build Inverse NTT
+      run: cargo build --release --bin invntt
+
+    - name: Run Inverse NTT Benchmark
+      run: cargo run --release --bin invntt
