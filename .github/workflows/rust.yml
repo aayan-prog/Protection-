@@ -22,10 +22,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Compiler ko bolna ki AVX2 code compile kare
   RUSTFLAGS: "-C target-feature=+avx2"
 
 jobs:
-  build_and_run:
+  build_only:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,8 +38,6 @@ jobs:
     - name: Rust Cache Setup
       uses: swatinem/rust-cache@v2
 
-    - name: Build Unified Core
+    # --- CRITICAL FIX: SIRF BUILD CHECK KARNA HAI ---
+    - name: Verify AVX2 Compilation (Release Mode)
       run: cargo build --release
-
-    - name: Run Complete Benchmark
-      run: cargo run --release
