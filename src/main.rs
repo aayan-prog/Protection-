@@ -1,4 +1,3 @@
-%%writefile src/main.rs
 #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
 
