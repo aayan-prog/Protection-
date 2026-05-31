@@ -1,5 +1,5 @@
 #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
-#![allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+#![allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn, clippy::missing_safety_doc, dead_code, unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
@@ -41,7 +41,7 @@ static INV_ZETAS: [i16; 128] = [
     -1140, -2306, -2385, -958, -3002, -1762, -2851, -100, -1253, -3044, -2493, -2060, -223, -2146, -1100, -6
 ];
 
-// --- SCALAR CORE REDUCTIONS ---
+// --- CORE REDUCTIONS ---
 #[inline(always)]
 const fn montgomery_reduce_scalar(a: i32) -> i16 {
     let k = ((a as i16).wrapping_mul(QINV)) as i32;
@@ -60,7 +60,6 @@ const fn barrett_reduce_scalar(a: i16) -> i16 {
     r
 }
 
-// --- AVX2 CORE REDUCTIONS ---
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn montgomery_reduce_avx(a_lo: __m256i, a_hi: __m256i) -> __m256i {
@@ -82,9 +81,7 @@ unsafe fn barrett_reduce_avx(a: __m256i) -> __m256i {
     _mm256_sub_epi16(a, q_mul)
 }
 
-// ==========================================
-// 1. FORWARD NTT PIPELINE (6.89ms Engine)
-// ==========================================
+// --- FORWARD NTT ---
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
@@ -133,19 +130,7 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     }
 }
 
-pub fn poly_ntt_dispatch(poly: &mut Poly) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("avx2") {
-            unsafe { poly_ntt_avx(poly); }
-            return;
-        }
-    }
-}
-
-// ==========================================
-// 2. INVERSE NTT PIPELINE (9.48ms Engine)
-// ==========================================
+// --- INVERSE NTT ---
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn poly_invntt_avx(poly: &mut Poly) {
@@ -206,48 +191,37 @@ pub unsafe fn poly_invntt_avx(poly: &mut Poly) {
     }
 }
 
+pub fn poly_ntt_dispatch(poly: &mut Poly) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { poly_ntt_avx(poly); }
+        }
+    }
+}
+
 pub fn poly_invntt_dispatch(poly: &mut Poly) {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
             unsafe { poly_invntt_avx(poly); }
-            return;
         }
     }
 }
 
-// ==========================================
-// 3. MASTER MAIN BENCHMARK
-// ==========================================
 fn main() {
-    println!("🚀 INITIALIZING COMBINED AVX2 NTT/iNTT MONSTER ENGINE...");
+    println!("🚀 INITIALIZING UNIFIED AVX2 NTT/iNTT PIPELINE...");
 
     let mut poly = Poly { coeffs: [0; 256] };
     for i in 0..256 {
         poly.coeffs[i] = (i % 3329) as i16;
     }
 
-    // --- BENCHMARK 1: FORWARD NTT ---
-    let start_ntt = std::time::Instant::now();
     let mut active_poly_ntt = poly.clone();
-    for _ in 0..10000 {
-        active_poly_ntt = poly.clone();
-        poly_ntt_dispatch(&mut active_poly_ntt);
-    }
-    let duration_ntt = start_ntt.elapsed();
-    println!("⚡ FORWARD NTT COMPLETE (10,000 runs): {:?}", duration_ntt);
+    poly_ntt_dispatch(&mut active_poly_ntt);
     println!("📊 NTT Sample Outputs: {:?}", &active_poly_ntt.coeffs[0..5]);
 
-    println!("--------------------------------------------------");
-
-    // --- BENCHMARK 2: INVERSE NTT ---
-    let start_intt = std::time::Instant::now();
     let mut active_poly_intt = poly.clone();
-    for _ in 0..10000 {
-        active_poly_intt = poly.clone();
-        poly_invntt_dispatch(&mut active_poly_intt);
-    }
-    let duration_intt = start_intt.elapsed();
-    println!("⚡ INVERSE iNTT COMPLETE (10,000 runs): {:?}", duration_intt);
+    poly_invntt_dispatch(&mut active_poly_intt);
     println!("📊 iNTT Sample Outputs: {:?}", &active_poly_intt.coeffs[0..5]);
 }
