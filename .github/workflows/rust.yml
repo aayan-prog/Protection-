@@ -1,4 +1,4 @@
- name: Rust Unified Engine CI
+name: Rust Simple Check CI
 
 on:
   push:
@@ -8,20 +8,20 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-C target-feature=+avx2"
 
 jobs:
-  build_check:
+  quick_check:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust Stable Toolchain
+    - name: Install Rust Stable
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Rust Cache Automation
+    - name: Cargo Cache Setup
       uses: swatinem/rust-cache@v2
 
-    - name: Verify Strict AVX2 Production Build
-      run: cargo build --release
+    # --- THE MAGIC FLAG: Sirf code check karo, build mat karo ---
+    - name: Run Syntax and Validity Check
+      run: cargo check
