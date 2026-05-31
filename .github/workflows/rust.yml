@@ -1,4 +1,4 @@
-name: Rust Simple Check CI
+name: Rust Benchmark Engine CI
 
 on:
   push:
@@ -8,20 +8,26 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # GitHub ke CPU ko bolna ki AVX2 capabilities ko unlock kare compile-time par
+  RUSTFLAGS: "-C target-feature=+avx2"
 
 jobs:
-  quick_check:
+  build_and_run_benchmark:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust Stable
+    - name: Install Rust Stable Toolchain
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cargo Cache Setup
       uses: swatinem/rust-cache@v2
 
-    # --- THE MAGIC FLAG: Sirf code check karo, build mat karo ---
-    - name: Run Syntax and Validity Check
-      run: cargo check
+    # --- YEH STEP BINARY COMPILE KAREGA ---
+    - name: Compile Extreme Production Build
+      run: cargo build --release
+
+    # --- YEH HAI AAPKI STOPWATCH JALANE WALI COMMAND ---
+    - name: Execute Live NTT & iNTT Benchmarks
+      run: cargo run --release
