@@ -12,7 +12,7 @@ env:
 jobs:
   build:
 
-    name: Rust AVX2 NTT CI
+    name: Rust Single Main CI
 
 on:
   push:
@@ -22,7 +22,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # GitHub ke CPU ko explicitly bolna ki AVX2 instructions allow kare
   RUSTFLAGS: "-C target-feature=+avx2"
 
 jobs:
@@ -38,16 +37,8 @@ jobs:
     - name: Rust Cache Setup
       uses: swatinem/rust-cache@v2
 
-    # --- FORWARD NTT EXECUTION ---
-    - name: Build Forward NTT
-      run: cargo build --release --bin ntt
+    - name: Build Unified Core
+      run: cargo build --release
 
-    - name: Run Forward NTT Benchmark
-      run: cargo run --release --bin ntt
-
-    # --- INVERSE NTT EXECUTION ---
-    - name: Build Inverse NTT
-      run: cargo build --release --bin invntt
-
-    - name: Run Inverse NTT Benchmark
-      run: cargo run --release --bin invntt
+    - name: Run Complete Benchmark
+      run: cargo run --release
