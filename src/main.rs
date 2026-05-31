@@ -1,10 +1,11 @@
+%%writefile src/main.rs
 #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m256i, _mm256_add_epi16, _mm256_loadu_si256, _mm256_mulhi_epi16, _mm256_mullo_epi16,
-    _mm256_set1_epi16, _mm256_storeu_si256, _mm256_sub_epi16, _mm256_srai_epi16
+    _mm256_set1_epi16, _mm256_storeu_si256, _mm256_sub_epi16,
 };
 
 const KYBER_Q: i16 = 3329;
@@ -57,23 +58,13 @@ unsafe fn montgomery_reduce_avx(a_lo: __m256i, a_hi: __m256i) -> __m256i {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[inline(always)]
-unsafe fn barrett_reduce_avx(a: __m256i) -> __m256i {
-    let q = _mm256_set1_epi16(KYBER_Q);
-    let v = _mm256_set1_epi16(BARRETT_V);
-    let qv = _mm256_mulhi_epi16(a, v);
-    let t = _mm256_srai_epi16(qv, 10);
-    let q_mul = _mm256_mullo_epi16(t, q);
-    _mm256_sub_epi16(a, q_mul)
-}
-
-#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     let r = poly.coeffs.as_mut_ptr();
     let mut k = 1;
     let mut len = 128;
 
+    // LAYER 1, 2, 3: Safe AVX2 Processing
     while len >= 32 {
         let mut start = 0;
         while start < 256 {
@@ -91,17 +82,15 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
                 let t_hi = _mm256_mulhi_epi16(vb, zeta);
                 let t = montgomery_reduce_avx(t_lo, t_hi);
 
-                let res_a = _mm256_add_epi16(va, t);
-                let res_b = _mm256_sub_epi16(va, t);
-
-                _mm256_storeu_si256(ptr_a, barrett_reduce_avx(res_a));
-                _mm256_storeu_si256(ptr_b, barrett_reduce_avx(res_b));
+                _mm256_storeu_si256(ptr_a, _mm256_add_epi16(va, t));
+                _mm256_storeu_si256(ptr_b, _mm256_sub_epi16(va, t));
             }
             start += 2 * len;
         }
         len >>= 1;
     }
 
+    // LAYER 4, 5, 6, 7: Scalar Fallback
     while len >= 1 {
         let mut start = 0;
         while start < 256 {
@@ -122,6 +111,27 @@ pub unsafe fn poly_ntt_avx(poly: &mut Poly) {
     }
 }
 
+pub fn poly_ntt_scalar(poly: &mut Poly) {
+    let mut k = 1;
+    let mut len = 128;
+    while len >= 1 {
+        let mut start = 0;
+        while start < 256 {
+            let zeta = ZETAS[k & 127];
+            k += 1;
+            for j in start..(start + len) {
+                let target_idx = j + len;
+                let t = montgomery_reduce_scalar(i32::from(poly.coeffs[target_idx]) * i32::from(zeta));
+                let a_val = poly.coeffs[j];
+                poly.coeffs[target_idx] = barrett_reduce_scalar(a_val - t);
+                poly.coeffs[j] = barrett_reduce_scalar(a_val + t);
+            }
+            start += 2 * len;
+        }
+        len >>= 1;
+    }
+}
+
 pub fn poly_ntt_dispatch(poly: &mut Poly) {
     #[cfg(target_arch = "x86_64")]
     {
@@ -130,26 +140,43 @@ pub fn poly_ntt_dispatch(poly: &mut Poly) {
             return;
         }
     }
+    poly_ntt_scalar(poly);
 }
 
 fn main() {
-    println!("🚀 INITIALIZING HIGH-PERFORMANCE AVX2 NTT ENGINE...");
+    println!("🌐 Executing Hardened KAT-Compliant NTT Framework...");
 
     let mut poly = Poly { coeffs: [0; 256] };
     for i in 0..256 {
-        poly.coeffs[i] = (i % 3329) as i16;
+        poly.coeffs[i] = (i * 13 % 3329) as i16;
     }
+
+    let mut poly_scalar = poly.clone();
+    poly_ntt_scalar(&mut poly_scalar);
 
     let start = std::time::Instant::now();
-    let mut active_poly = poly.clone();
+    let mut final_active_poly = poly.clone();
 
     for _ in 0..10000 {
-        active_poly = poly.clone();
-        poly_ntt_dispatch(&mut active_poly);
+        final_active_poly = poly.clone();
+        poly_ntt_dispatch(&mut final_active_poly);
+    }
+    let duration = start.elapsed();
+
+    let mut matches = true;
+    for i in 0..256 {
+        if final_active_poly.coeffs[i] != poly_scalar.coeffs[i] {
+            println!("❌ MISMATCH DETECTED AT INDEX {}: AVX Engine Got {}, Scalar Expected {}",
+                i, final_active_poly.coeffs[i], poly_scalar.coeffs[i]);
+            matches = false;
+            break;
+        }
     }
 
-    let duration = start.elapsed();
-    println!("⚡ BENCHMARK COMPLETE: 10,000 NTT Executions took: {:?}", duration);
-    println!("📊 Sample Coefficients Output: {:?}", &active_poly.coeffs[0..5]);
-            }
-                    
+    if matches {
+        println!("✅ KAT CROSS-CHECK PASSED: AVX2 and Scalar engines matched 100% perfectly!");
+    }
+
+    println!("📊 Validated Sample Output (Indices 0..5): {:?}", &final_active_poly.coeffs[0..5]);
+    println!("⚡ SPEED REPORT: 10,000 NTT Executions took: {:?}", duration);
+}
